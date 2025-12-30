@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Protocols Pro Hub</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background: #f1f5f9; font-family: 'Plus Jakarta Sans', sans-serif; height: 100vh; overflow: hidden; }
+        .glass-panel { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); border-radius: 1.5rem; border: 1px solid #e2e8f0; }
+        .logo-bg { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 300px; font-weight: 900; color: rgba(37, 99, 235, 0.04); z-index: 0; pointer-events: none; user-select: none; }
+        
+        .packet { 
+            width: 55px; height: 55px; border-radius: 12px; display: flex; align-items: center; 
+            justify-content: center; font-weight: 800; font-size: 1.2rem; position: absolute; 
+            top: 50%; transform: translateY(-50%); box-shadow: 0 10px 20px rgba(37, 99, 235, 0.2); z-index: 50; 
+        }
+
+        @keyframes fly-right { from { left: 80px; } to { left: calc(100% - 130px); } }
+        @keyframes fly-left { from { left: calc(100% - 130px); } to { left: 80px; } }
+        
+        .alert-active { animation: flash-red 0.6s infinite alternate; }
+        @keyframes flash-red { from { background: transparent; } to { background: rgba(239, 68, 68, 0.15); } }
+        
+        #log-box::-webkit-scrollbar { width: 4px; }
+        #log-box::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        
+        .tab-active { background: #2563eb !important; color: white !important; shadow: 0 4px 12px rgba(37, 99, 235, 0.3); }
+    </style>
+</head>
+<body class="p-4">
+
+    <div class="logo-bg">$</div>
+
+    <div class="max-w-7xl mx-auto h-full flex flex-col gap-4 relative z-10">
+        
+        <header class="glass-panel p-5 flex justify-between items-center shadow-sm">
+            <div class="flex items-center gap-4">
+                <div class="bg-blue-600 text-white w-14 h-14 rounded-2xl flex items-center justify-center font-black text-2xl shadow-xl shadow-blue-500/40">$</div>
+                <div>
+                    <h1 class="text-xl font-black text-slate-800 tracking-tight">PROTOCOLS HUB</h1>
+                    <div class="flex gap-2 mt-1">
+                        <span class="text-[10px] font-bold text-green-600 px-2 py-0.5 bg-green-50 rounded border border-green-100 uppercase">Success: <span id="success-count">0</span></span>
+                        <span class="text-[10px] font-bold text-red-600 px-2 py-0.5 bg-red-50 rounded border border-red-100 uppercase">Loss: <span id="loss-count">0</span></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200 gap-1">
+                <button onclick="setMode('sw')" id="btn-sw" class="tab-active px-5 py-2 rounded-xl text-xs font-black uppercase transition-all">Stop-Wait</button>
+                <button onclick="setMode('gbn')" id="btn-gbn" class="bg-white text-slate-500 px-5 py-2 rounded-xl text-xs font-black uppercase transition-all hover:bg-slate-50">Go-Back-N</button>
+                <button onclick="setMode('sr')" id="btn-sr" class="bg-white text-slate-500 px-5 py-2 rounded-xl text-xs font-black uppercase transition-all hover:bg-slate-50">Selective Repeat</button>
+            </div>
+
+            <div class="flex items-center gap-3">
+                <button onclick="runStep()" class="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-2xl font-black text-xs uppercase shadow-lg shadow-blue-600/30 transition-all active:scale-95">🚀 Launch</button>
+                <button onclick="location.reload()" class="bg-white p-3 rounded-xl border hover:bg-slate-50 transition shadow-sm">🔄</button>
+            </div>
+        </header>
+
+        <div id="theater" class="glass-panel flex-1 relative p-12 overflow-hidden transition-colors duration-500">
+            <div id="congestion-banner" class="hidden absolute top-6 left-1/2 -translate-x-1/2 bg-red-600 text-white px-8 py-2 rounded-full font-black text-[10px] tracking-[0.4em] animate-bounce z-[100] shadow-2xl">
+                ⚠️ NETWORK CONGESTION DETECTED
+            </div>
+
+            <div class="flex justify-between relative z-10">
+                <div class="text-center font-black text-blue-600 bg-white shadow-md border p-4 rounded-3xl w-36">SENDER</div>
+                <div class="text-center font-black text-green-600 bg-white shadow-md border p-4 rounded-3xl w-36">RECEIVER</div>
+            </div>
+
+            <div id="packet-container" class="absolute inset-0 pointer-events-none"></div>
+
+            <div class="absolute bottom-8 left-8 right-8 flex justify-between items-end">
+                <div class="bg-white/80 p-5 rounded-3xl border shadow-sm">
+                    <p class="text-[9px] font-black text-slate-400 mb-3 uppercase tracking-widest italic">Sender Window Frame</p>
+                    <div class="flex gap-2 relative" id="seq-row">
+                        <div id="window-mover" class="absolute top-0 left-0 h-full border-2 border-blue-600 bg-blue-600/10 rounded-xl transition-all duration-500 z-0"></div>
+                    </div>
+                </div>
+                
+                <div class="bg-white/80 p-5 rounded-3xl border shadow-sm">
+                    <p class="text-[9px] font-black text-slate-400 mb-3 uppercase tracking-widest italic">Receiver Data Store</p>
+                    <div class="flex gap-2" id="buffer-row"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="glass-panel h-52 p-6 flex flex-col shadow-sm">
+            <h3 class="font-black text-[10px] text-slate-400 uppercase tracking-[0.3em] mb-3 border-b pb-2">Real-time Traffic Monitor</h3>
+            <div id="log-box" class="flex-1 overflow-y-auto font-bold text-slate-600 text-sm">
+                <div class="py-1 opacity-50 italic">System ready. Click "Launch" to start transmission...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let mode='sw', base=0, nextSeq=0, success=0, loss=0;
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        function playSound(f, d, t='sine') {
+            const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+            o.type = t; o.frequency.value = f;
+            g.gain.setValueAtTime(0.04, audioCtx.currentTime);
+            g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + d);
+            o.connect(g); g.connect(audioCtx.destination);
+            o.start(); o.stop(audioCtx.currentTime + d);
+        }
+
+        function initSeq() {
+            const row = document.getElementById('seq-row'), buf = document.getElementById('buffer-row');
+            row.innerHTML = '<div id="window-mover" class="absolute top-0 left-0 h-full border-2 border-blue-600 bg-blue-600/10 rounded-xl transition-all z-0"></div>';
+            buf.innerHTML = '';
+            for(let i=0; i<10; i++) {
+                row.innerHTML += `<div id="s-${i}" class="w-10 h-10 flex items-center justify-center text-xs font-black text-slate-300 z-10">${i}</div>`;
+                buf.innerHTML += `<div id="b-${i}" class="w-10 h-10 rounded-xl border-2 border-slate-100 bg-white flex items-center justify-center text-[10px] font-bold text-slate-200">${i}</div>`;
+            }
+            updateWindow();
+        }
+
+        function addLog(m, type='info') {
+            const box = document.getElementById('log-box');
+            const color = type === 'error' ? 'text-red-600' : (type === 'success' ? 'text-green-600' : 'text-blue-700');
+            box.innerHTML = `<div class="py-1.5 border-b border-slate-50 ${color}">[${new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})}] ${m}</div>` + box.innerHTML;
+        }
+
+        function checkCongestion() {
+            if(loss >= 3) {
+                document.getElementById('theater').classList.add('alert-active');
+                document.getElementById('congestion-banner').classList.remove('hidden');
+                playSound(80, 0.6, 'square');
+            }
+        }
+
+        function runStep() {
+            const seq = nextSeq % 10; nextSeq++;
+            const p = document.createElement('div');
+            p.className = 'packet border-4 border-blue-600 text-blue-600 bg-white shadow-xl';
+            p.innerText = seq;
+            p.style.animation = 'fly-right 3.2s linear forwards';
+            document.getElementById('packet-container').appendChild(p);
+            
+            playSound(500, 0.1);
+            addLog(`SENDER: Transmitting Packet ${seq}`);
+
+            if(Math.random() < 0.25) { // 25% Chance of Drop
+                setTimeout(() => {
+                    p.style.borderColor = '#ef4444'; p.style.color = '#ef4444'; p.innerText = "X";
+                    loss++; document.getElementById('loss-count').innerText = loss;
+                    playSound(150, 0.3, 'sawtooth');
+                    addLog(`DROPPED: Packet ${seq} lost due to noise!`, 'error');
+                    checkCongestion();
+                    setTimeout(() => p.remove(), 600);
+                }, 1600);
+            } else {
+                p.onanimationend = () => { p.remove(); handleArrival(seq); };
+            }
+        }
+
+        function handleArrival(seq) {
+            const slot = document.getElementById(`b-${seq}`);
+            slot.className = 'w-10 h-10 rounded-xl border-2 border-green-600 bg-green-50 flex items-center justify-center text-[10px] font-black text-green-700 shadow-md';
+            slot.innerText = 'OK';
+            success++; document.getElementById('success-count').innerText = success;
+            playSound(900, 0.1);
+            addLog(`RECEIVER: Packet ${seq} buffered. Returning ACK.`, 'success');
+            
+            const ack = document.createElement('div');
+            ack.className = 'packet border-4 border-green-600 text-green-600 bg-white shadow-xl';
+            ack.innerText = 'A' + seq;
+            ack.style.animation = 'fly-left 3.2s linear forwards';
+            document.getElementById('packet-container').appendChild(ack);
+            
+            ack.onanimationend = () => {
+                ack.remove();
+                if(seq === base) { base++; updateWindow(); addLog(`SENDER: ACK ${seq} received. Sliding window.`, 'success'); }
+            };
+        }
+
+        function setMode(m) { 
+            mode = m; base = 0; nextSeq = 0; success = 0; loss = 0;
+            document.getElementById('success-count').innerText = '0';
+            document.getElementById('loss-count').innerText = '0';
+            document.getElementById('theater').classList.remove('alert-active');
+            document.getElementById('congestion-banner').classList.add('hidden');
+            
+            document.querySelectorAll('header button[id^="btn-"]').forEach(btn => {
+                btn.className = "bg-white text-slate-500 px-5 py-2 rounded-xl text-xs font-black uppercase transition-all hover:bg-slate-50";
+            });
+            document.getElementById(`btn-${m}`).className = "tab-active px-5 py-2 rounded-xl text-xs font-black uppercase transition-all";
+            
+            initSeq(); 
+            addLog(`SYSTEM: Switched to ${m.toUpperCase()} Protocol.`);
+        }
+
+        function updateWindow() {
+            const mover = document.getElementById('window-mover'), start = document.getElementById(`s-${base}`);
+            if(start) {
+                let size = mode === 'sw' ? 1 : 4;
+                mover.style.width = (40 * size + (size-1)*8 + 12) + 'px'; 
+                mover.style.left = (start.offsetLeft - 6) + 'px';
+            }
+        }
+
+        initSeq();
+    </script>
+</body>
+</html>
